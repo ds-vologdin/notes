@@ -166,7 +166,11 @@ kernel.shmmax = 21474836480
 </code></pre>
 <h2 id="cloud-init">Создаем образы cloud-init</h2>
 <p>В создаем файлы с конфигурацией cloud-init.</p>
-<pre><code class="language-sh">mkdir cloud-init
+<pre><code class="language-sh"># создаем ssh ключи для доступа в виртуальную машину
+ssh-keygen -t ed25519 -C &quot;test@compute&quot;
+
+# создаем файлы с конфигурацией cloud-init
+mkdir cloud-init
 
 touch cloud-init/meta-data
 touch cloud-init/network-config
@@ -181,24 +185,29 @@ ssh_authorized_keys:
   - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2mkI/No5xj3fFcfvq/y3b84p8nODFbQf5sETNHwa8W test@compute
 &quot; &gt; cloud-init/user-data
 
+# создаем образ диска с меткой cidata
 genisoimage \
     -output seed.img \
     -volid cidata -rational-rock -joliet \
     cloud-init/user-data cloud-init/meta-data cloud-init/network-config
 
+# под каждую виртуальную машину нужен свой диск
 cp seed.img seed_01.img
 cp seed.img seed_02.img
 </code></pre>
 <p>Обратите внимание, что я передаю в гостевые машины публичный ssh ключ. Этот ключ вам
 следует поменять на свой.</p>
 <h2 id="_4">Создаем виртуальные машины</h2>
-<pre><code class="language-sh">BASE_IMAGE=base.qcow2
+<pre><code class="language-sh"># скачиваем базовый образ ubuntu
+BASE_IMAGE=base.qcow2
 BASE_IMAGE_URL=https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
 wget $BASE_IMAGE_URL -O $BASE_IMAGE
 
+# создаём снапшоты под каждую виртуалку
 qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 01.img 10G
 qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 02.img 10G
 
+# запускаем виртуалки
 qemu-system-x86_64 \
     -machine accel=kvm:tcg \
     -smp cpus=2 \
@@ -233,7 +242,7 @@ qemu-system-x86_64 \
 <a href="https://wiki.qemu.org/Documentation/Networking#User_Networking_(SLIRP)">SLIRP</a>
 для организации доступа на гостевые машины по ssh (порты 22001 и 22002 соответственно).</p>
 <p>Второй же интерфейс будет забриджован с соседней виртуальной машиной.</p>
-<p>Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh</p>
+<p>Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh. Где ssh_key файл с приватным ssh ключом (в конфигурации cloud-init мы использовали его</p>
 <pre><code class="language-sh">ssh -p 22001 -i ssh_key -o &quot;StrictHostKeyChecking=no&quot; -o &quot;UserKnownHostsFile=/dev/null&quot; -o &quot;ConnectTimeout=1&quot; test@127.0.0.1
 
 ssh -p 22002 -i ssh_key -o &quot;StrictHostKeyChecking=no&quot; -o &quot;UserKnownHostsFile=/dev/null&quot; -o &quot;ConnectTimeout=1&quot; test@127.0.0.1

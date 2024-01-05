@@ -1,0 +1,5 @@
+site_name: Технические заметки
+
+nav:
+  - Home: index.md
+  - "Обо мне": about.md

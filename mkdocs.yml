@@ -1,5 +1,5 @@
-site_name: Технические заметки
+site_name: Vologdin Dmitry
 
 nav:
-  - Home: index.md
+  - "Технические заметки": index.md
   - "Обо мне": about.md

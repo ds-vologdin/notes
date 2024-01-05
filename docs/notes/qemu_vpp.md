@@ -105,6 +105,10 @@ kernel.shmmax = 21474836480
 
 
 ```sh
+# создаем ssh ключи для доступа в виртуальную машину
+ssh-keygen -t ed25519 -C "test@compute"
+
+# создаем файлы с конфигурацией cloud-init
 mkdir cloud-init
 
 touch cloud-init/meta-data
@@ -120,11 +124,13 @@ ssh_authorized_keys:
   - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2mkI/No5xj3fFcfvq/y3b84p8nODFbQf5sETNHwa8W test@compute
 " > cloud-init/user-data
 
+# создаем образ диска с меткой cidata
 genisoimage \
     -output seed.img \
     -volid cidata -rational-rock -joliet \
     cloud-init/user-data cloud-init/meta-data cloud-init/network-config
 
+# под каждую виртуальную машину нужен свой диск
 cp seed.img seed_01.img
 cp seed.img seed_02.img
 ```
@@ -135,13 +141,16 @@ cp seed.img seed_02.img
 ## Создаем виртуальные машины
 
 ```sh
+# скачиваем базовый образ ubuntu
 BASE_IMAGE=base.qcow2
 BASE_IMAGE_URL=https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
 wget $BASE_IMAGE_URL -O $BASE_IMAGE
 
+# создаём снапшоты под каждую виртуалку
 qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 01.img 10G
 qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 02.img 10G
 
+# запускаем виртуалки
 qemu-system-x86_64 \
     -machine accel=kvm:tcg \
     -smp cpus=2 \
@@ -179,7 +188,7 @@ qemu-system-x86_64 \
 
 Второй же интерфейс будет забриджован с соседней виртуальной машиной.
 
-Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh
+Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh. Где ssh_key файл с приватным ssh ключом (в конфигурации cloud-init мы использовали его
 
 ```sh
 ssh -p 22001 -i ssh_key -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -o "ConnectTimeout=1" test@127.0.0.1

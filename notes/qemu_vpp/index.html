@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Объединение в одну сеть виртуальных машины через VPP - Технические заметки</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/font-awesome.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="../..">Технические заметки</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-toggle="collapse" data-target="#navbar-collapse">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="navitem">
+                                <a href="../.." class="nav-link">Home</a>
+                            </li>
+                            <li class="navitem">
+                                <a href="../../about/" class="nav-link">Обо мне</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ml-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-toggle="modal" data-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-light navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-toggle="collapse" data-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-secondary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-level="1"><a href="#vpp" class="nav-link">Объединение в одну сеть виртуальных машины через VPP</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-level="2"><a href="#_1" class="nav-link">Подготовительные работы</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#_2" class="nav-link">Конфигурируем сеть для виртуальных машин</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#_3" class="nav-link">Настройка памяти на хосте</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#cloud-init" class="nav-link">Создаем образы cloud-init</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#_4" class="nav-link">Создаем виртуальные машины</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="vpp">Объединение в одну сеть виртуальных машины через VPP</h1>
+<p>Задача заключается в подключении виртуальных машин qemu в одну L2 сеть,
+используя <a href="https://www.qemu.org/docs/master/interop/vhost-user.html">протокол "vhost-user"</a>.</p>
+<p>Основное преимущество этой схемы заключается в том, что для передачи сетевых пакетов
+из виртуальных машин будет происходить без передачи их в сетевой стек хостовой ОС.
+Как известно, производительность сетевого стека linux не идеальна, к тому же и переключение
+контекста из user в kernel space не бесплатно.</p>
+<p>Поэтому в некоторых случаях имеет смысл использовать возможность передавать сетевые пакеты
+от одного процесса другому напрямую.</p>
+<h2 id="_1">Подготовительные работы</h2>
+<p>В качестве стенда используется ubuntu 22.04, на которой установлены пакеты</p>
+<ul>
+<li>qemu-system-x86</li>
+<li>genisoimage</li>
+<li>curl</li>
+</ul>
+<p>Так же нам надо установить <a href="https://s3-docs.fd.io/vpp/24.02/">VPP</a>.</p>
+<pre><code class="language-sh">curl -s https://packagecloud.io/install/repositories/fdio/release/script.deb.sh | sudo bash
+apt-get update
+apt-get install vpp vpp-plugin-core vpp-plugin-dpdk
+</code></pre>
+<p><em>Внимание</em>: Не рекомендую устанавливать VPP на свою рабочую машину. После установки у меня
+периодически падали приложения из snap пакетов. Coredump показывал ошибку в недрах libc,
+хотя VPP его версию не меняло. Как было то ни было, куда безопаснее подобные тесты
+проводить на отдельных стендах.</p>
+<p>Дефолтные настройки vpp подразумевают складывание логов в директорию <code>/var/log/vpp/</code>, установщик которую не создает. Поэтому следует это починить</p>
+<pre><code class="language-sh">mkdir /var/log/vpp/
+systemctl restart vpp
+</code></pre>
+<h2 id="_2">Конфигурируем сеть для виртуальных машин</h2>
+<p>Воспользуемся самой простой схемой - объединим виртуальные сетевые интерфейсы в бридж.
+Это максимально простое решение, естественно схема объединения виртуальных машин
+в реальном мире сильно сложнее. Но предметом этой статьи не является.</p>
+<pre><code class="language-sh">vppctl create vhost-user socket /var/run/vpp/01.sock server
+vppctl create vhost-user socket /var/run/vpp/02.sock server
+</code></pre>
+<p>У нас появились 2 сетевых интерфейса <code>VirtualEthernet0/0/0</code> и <code>VirtualEthernet0/0/1</code>.</p>
+<p>Объединяем их в бридж</p>
+<pre><code class="language-sh">vppctl set interface l2 bridge VirtualEthernet0/0/0 1
+vppctl set interface l2 bridge VirtualEthernet0/0/1 1
+</code></pre>
+<p><em>Возможные проблемы</em>: мак адреса на виртуальном сетевом интерфейсе и интерфейсе на
+гостевой ОС не совпадают. Кажется это не фича. В этом случае надо повесить на
+виртуальный сетевой интерфейс мак адрес из гостевой ОС (или наоборот).</p>
+<h2 id="_3">Настройка памяти на хосте</h2>
+<p>vhost-user требуют использования hugetbl и shared memory. VPP будет напрямую ходить в
+память гостевой ОС.</p>
+<p>VPP при установке задает параметры ядра, на них надо критически взглянуть и возможно
+увеличить некоторые значения. Например так</p>
+<pre><code class="language-sh">cat /etc/sysctl.d/80-vpp.conf
+# Number of 2MB hugepages desired
+vm.nr_hugepages=10240
+
+# Must be greater than or equal to (2 * vm.nr_hugepages).
+vm.max_map_count=20480
+
+# All groups allowed to access hugepages
+vm.hugetlb_shm_group=0
+
+# Shared Memory Max must be greater or equal to the total size of hugepages.
+# For 2MB pages, TotalHugepageSize = vm.nr_hugepages * 2 * 1024 * 1024
+# If the existing kernel.shmmax setting  (cat /proc/sys/kernel/shmmax)
+# is greater than the calculated TotalHugepageSize then set this parameter
+# to current shmmax value.
+kernel.shmmax=21474836480
+</code></pre>
+<p>после чего применим эти настройки</p>
+<pre><code class="language-sh">sysctl -p /etc/sysctl.d/80-vpp.conf
+vm.nr_hugepages = 10240
+vm.max_map_count = 20480
+vm.hugetlb_shm_group = 0
+kernel.shmmax = 21474836480
+</code></pre>
+<h2 id="cloud-init">Создаем образы cloud-init</h2>
+<p>В создаем файлы с конфигурацией cloud-init.</p>
+<pre><code class="language-sh">mkdir cloud-init
+
+touch cloud-init/meta-data
+touch cloud-init/network-config
+
+echo &quot;#cloud-config
+user: test
+password: test
+chpasswd:
+  expire: False
+ssh_pwauth: True
+ssh_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2mkI/No5xj3fFcfvq/y3b84p8nODFbQf5sETNHwa8W test@compute
+&quot; &gt; cloud-init/user-data
+
+genisoimage \
+    -output seed.img \
+    -volid cidata -rational-rock -joliet \
+    cloud-init/user-data cloud-init/meta-data cloud-init/network-config
+
+cp seed.img seed_01.img
+cp seed.img seed_02.img
+</code></pre>
+<p>Обратите внимание, что я передаю в гостевые машины публичный ssh ключ. Этот ключ вам
+следует поменять на свой.</p>
+<h2 id="_4">Создаем виртуальные машины</h2>
+<pre><code class="language-sh">BASE_IMAGE=base.qcow2
+BASE_IMAGE_URL=https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+wget $BASE_IMAGE_URL -O $BASE_IMAGE
+
+qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 01.img 10G
+qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 02.img 10G
+
+qemu-system-x86_64 \
+    -machine accel=kvm:tcg \
+    -smp cpus=2 \
+    -m 512m \
+    -drive file=01.img,if=virtio \
+    -drive file=seed_01.img,if=virtio,format=raw \
+    -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:22001-:22 \
+    -device e1000,netdev=net0 \
+    -object memory-backend-file,id=mem,size=512m,mem-path=/dev/hugepages,share=on \
+    -numa node,memdev=mem -mem-prealloc \
+    -chardev socket,id=chr0,path=/var/run/vpp/01.sock \
+    -netdev type=vhost-user,id=net1,chardev=chr0 \
+    -device virtio-net-pci,mac=00:00:00:00:00:01,netdev=net1 \
+    -display none -daemonize
+
+qemu-system-x86_64 \
+    -machine accel=kvm:tcg \
+    -smp cpus=2 \
+    -m 512m \
+    -drive file=02.img,if=virtio \
+    -drive file=seed_01.img,if=virtio,format=raw \
+    -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:22002-:22 \
+    -device e1000,netdev=net0 \
+    -object memory-backend-file,id=mem,size=512m,mem-path=/dev/hugepages,share=on \
+    -numa node,memdev=mem -mem-prealloc \
+    -chardev socket,id=chr0,path=/var/run/vpp/02.sock \
+    -netdev type=vhost-user,id=net1,chardev=chr0 \
+    -device virtio-net-pci,mac=00:00:00:00:00:01,netdev=net1 \
+    -display none -daemonize
+</code></pre>
+<p>Так мы создаем 2 машины с 2 сетевыми интерфейсами. net0 использует
+<a href="https://wiki.qemu.org/Documentation/Networking#User_Networking_(SLIRP)">SLIRP</a>
+для организации доступа на гостевые машины по ssh (порты 22001 и 22002 соответственно).</p>
+<p>Второй же интерфейс будет забриджован с соседней виртуальной машиной.</p>
+<p>Задаем сетевые адреса. На первой машине</p>
+<pre><code class="language-sh">ip addr add dev ens3 192.168.0.1/24
+</code></pre>
+<p>на второй</p>
+<pre><code class="language-sh">ip addr add dev ens3 192.168.0.2/24
+</code></pre></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/jquery-3.6.0.min.js"></script>
+        <script src="../../js/bootstrap.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

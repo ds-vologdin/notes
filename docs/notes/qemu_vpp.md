@@ -179,7 +179,15 @@ qemu-system-x86_64 \
 
 Второй же интерфейс будет забриджован с соседней виртуальной машиной.
 
-Задаем сетевые адреса. На первой машине
+Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh
+
+```sh
+ssh -p 22001 -i ssh_key -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -o "ConnectTimeout=1" test@127.0.0.1
+
+ssh -p 22002 -i ssh_key -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -o "ConnectTimeout=1" test@127.0.0.1
+```
+
+На первой машине
 
 ```sh
 ip addr add dev ens3 192.168.0.1/24

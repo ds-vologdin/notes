@@ -233,7 +233,12 @@ qemu-system-x86_64 \
 <a href="https://wiki.qemu.org/Documentation/Networking#User_Networking_(SLIRP)">SLIRP</a>
 для организации доступа на гостевые машины по ssh (порты 22001 и 22002 соответственно).</p>
 <p>Второй же интерфейс будет забриджован с соседней виртуальной машиной.</p>
-<p>Задаем сетевые адреса. На первой машине</p>
+<p>Задаем сетевые адреса. Для этого мы можем подключиться на гостевые ОС по ssh</p>
+<pre><code class="language-sh">ssh -p 22001 -i ssh_key -o &quot;StrictHostKeyChecking=no&quot; -o &quot;UserKnownHostsFile=/dev/null&quot; -o &quot;ConnectTimeout=1&quot; test@127.0.0.1
+
+ssh -p 22002 -i ssh_key -o &quot;StrictHostKeyChecking=no&quot; -o &quot;UserKnownHostsFile=/dev/null&quot; -o &quot;ConnectTimeout=1&quot; test@127.0.0.1
+</code></pre>
+<p>На первой машине</p>
 <pre><code class="language-sh">ip addr add dev ens3 192.168.0.1/24
 </code></pre>
 <p>на второй</p>

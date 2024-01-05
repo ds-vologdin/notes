@@ -169,7 +169,7 @@ qemu-system-x86_64 \
     -numa node,memdev=mem -mem-prealloc \
     -chardev socket,id=chr0,path=/var/run/vpp/02.sock \
     -netdev type=vhost-user,id=net1,chardev=chr0 \
-    -device virtio-net-pci,mac=00:00:00:00:00:01,netdev=net1 \
+    -device virtio-net-pci,mac=00:00:00:00:00:02,netdev=net1 \
     -display none -daemonize
 ```
 

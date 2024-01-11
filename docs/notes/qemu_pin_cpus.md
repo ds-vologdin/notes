@@ -481,8 +481,9 @@ cat /proc/70159/numa_maps | grep bind
 
 Параметр N0, говорит, что аллоцирована память на NUMA ноде 0.
 
-А сейчас можно остановить виртуальную машину
+А сейчас можно остановить виртуальные машины
 
 ```sh
 systemctl stop vm-test-001.service
+systemctl stop vm-test-002.service
 ```

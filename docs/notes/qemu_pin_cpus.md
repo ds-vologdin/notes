@@ -80,7 +80,7 @@ lstopo --of png > host.png
 
 На нашей тестовой машине выделим под них 0,48,24,72 CPU. Стоит обратить внимание,
 это 2 ядра с учетом [гипер-трединга](https://en.wikipedia.org/wiki/Hyper-threading).
-0 и 48 - это одно ядро с 2 тредами. У пары 24 и 72 такая же история.
+Пара 0 и 48 - это одно ядро с 2 тредами. У пары 24 и 72 такая же история.
 
 ### Привязка системных ресурсов к конкретным CPU
 
@@ -161,7 +161,7 @@ systemd-cgls
     └─1914 /lib/systemd/systemd-logind
 ```
 
-И эта картинка соотвествует иерархии cgroups
+И эта картинка соответствует иерархии cgroups
 
 ```sh
 tree -d /sys/fs/cgroup/
@@ -276,24 +276,33 @@ cat /sys/fs/cgroup/user.slice/cpuset.cpus
 0,24,48,72
 ```
 
-## Ресурсы для виртуа`льных машин
+## Ресурсы для виртуальных машин
 
 Пользовательским машинам мы будем предоставлять столько CPU, сколько виртуальных CPU
 конфигурируется на машине.
 
 **Внимание.** На самом деле qemu создаст больше тредов, чем количество vCPU, однако
-будем игнорировать этот факт и позволим ОС планировать все треды одной виртаульной
-машины на ограниченном наборе физичских CPU.
+будем игнорировать этот факт и позволим ОС планировать все треды одной виртуальной
+машины на ограниченном наборе физических CPU.
 Так мы можем создать виртаульную машину с 4 vCPU, привяжем её к 4 физическим CPU,
-при этом qemu может созать 6 тредов.
+при этом qemu может создать 6 тредов.
 
-#### Аллокация памяти на нужной NUMA ноде
+### Аллокация памяти на нужной NUMA ноде
 
-qemu позволяет использовать hugetbl и в этом случае у нас появляется возможность
-указать на какой NUMA ноде эта память должна быть аллоцирована.
+Qemu позволяет указать на какой NUMA ноде аллоцировать память.
+
+В случае, если используются hugetbl, то надо описать memory-backend так
 
 ```conf
--object memory-backend-ram,size=1Gb,id=mem,host-nodes=0,policy=bind
+-object memory-backend-file,id=mem,size=1Gb,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind \
+-numa node,memdev=mem \
+-mem-prealloc
+```
+
+В случае, когда hugetbl не испольуются
+
+```conf
+-object memory-backend-ram,size=1Gb,id=mem,host-nodes=0,policy=bind,prealloc=on \
 -numa node,memdev=mem
 ```
 
@@ -306,9 +315,9 @@ The policy option sets the NUMA policy to one of the following values:
 - interleave - interleave memory allocations across the given host node list
 ```
 
-#### Hugetbl
+#### Настройка hugetbl
 
-Для того чтобы виртулаьные машины могли использовать
+Для того чтобы виртуальные машины могли использовать
 [hugetbl](https://www.kernel.org/doc/html/latest/admin-guide/mm/hugetlbpage.html)
 надо сконфигурировать ядро примерно так.
 
@@ -319,37 +328,62 @@ vm.nr_hugepages=10240
 
 Здесь мы создаем 10240 страниц по 2Мб.
 
-#### Запуск виртуальной машины
+### Запуск виртуальной машины
 
 В качестве гостевой ОС будем использовать [cirros](https://github.com/cirros-dev/cirros).
 
-Скачиваем образ и делаем с него снапшот
+Скачиваем образ и делаем с него снапшоты
 
 ```sh
 wget https://download.cirros-cloud.net/0.6.2/cirros-0.6.2-x86_64-disk.img -O cirros.img
 
-qemu-img create -f qcow2 -b cirros.img -F qcow2 test.img 10G
+qemu-img create -f qcow2 -b cirros.img -F qcow2 test-01.img 10G
+qemu-img create -f qcow2 -b cirros.img -F qcow2 test-02.img 10G
 ```
 
-Запускать виртулку будем, используя systemd-run, что позволит нам указать отдельный слайс и передать дополнительные настройки cgroup.
+Запускать виртуалку будем, используя systemd-run, что позволит нам указать отдельный
+слайс и передать дополнительные настройки cgroup.
 
-Запиним виртульную машину в 0 NUMA ноде, на процессорах 3,50,4,51
+#### Без hugetbl
+
+Запиним виртуальную машину в 0 NUMA ноде, на процессорах 3, 50, 4 и 51 (2 ядра и 4 треда)
 
 ```sh
 sudo systemd-run --slice=qemu.slice --unit=vm-test-001 -p AllowedCPUs=3,50,4,51 \
     qemu-system-x86_64 \
+        -name vm-test-001 \
         -machine accel=kvm:tcg \
         -smp cpus=4 \
-        -m 1024M \
-        -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind \
+        -m 1024m \
+        -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on \
         -numa node,memdev=mem \
-        -drive file=$(pwd)/test.img,if=virtio \
+        -drive file=$(pwd)/test-01.img,if=virtio \
         -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 \
         -device e1000,netdev=net0 \
         -display none
 ```
 
-Проверим, что виртальная машина запустилась
+#### С использованием hugetbl
+
+Запиним виртуальную машину в 0 NUMA ноде, на процессорах 5, 52, 6 и 53 (2 ядра и 4 треда)
+
+```sh
+sudo systemd-run --slice=qemu.slice --unit=vm-test-003 -p AllowedCPUs=5,52,6,53 \
+    qemu-system-x86_64 \
+        -name vm-test-002 \
+        -machine accel=kvm:tcg \
+        -smp cpus=4 \
+        -m 1024m \
+        -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind \
+        -numa node,memdev=mem \
+        -mem-prealloc \
+        -drive file=$(pwd)/test-02.img,if=virtio \
+        -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 \
+        -device e1000,netdev=net0 \
+        -display none
+```
+
+Проверим, что виртуальные машины запустились
 
 ```sh
 systemctl status vm-test-001.service
@@ -365,6 +399,20 @@ systemctl status vm-test-001.service
              └─69254 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=>
 
 Jan 11 07:54:51 77iaas-dev-ubuntu-03 systemd[1]: Started /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backe
+
+systemctl status vm-test-002.service
+● vm-test-002.service - /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,>
+     Loaded: loaded (/run/systemd/transient/vm-test-002.service; transient)
+  Transient: yes
+     Active: active (running) since Thu 2024-01-11 11:01:10 UTC; 6s ago
+   Main PID: 70150 (qemu-system-x86)
+      Tasks: 19 (limit: 629145)
+     Memory: 55.6M
+        CPU: 3.118s
+     CGroup: /qemu.slice/vm-test-002.service
+             └─70150 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,siz>
+
+Jan 11 11:01:10 77iaas-dev-ubuntu-02 systemd[1]: Started /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m
 ```
 
 Логи qemu процесса можно посмотреть
@@ -373,33 +421,65 @@ Jan 11 07:54:51 77iaas-dev-ubuntu-03 systemd[1]: Started /usr/bin/qemu-system-x8
 journalctl -u vm-test-001.service
 ```
 
-Проверим на каких CPU работает виртаульная машина
+Проверим на каких CPU работает первая виртуальная машина
 
 ```sh
-ps -eL -o psr,pid,spid,cmd | grep qemu-system-x86_64 | grep -v grep | sort
-  3   69254   69255 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
-  3   69254   69260 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
-  4   69254   69259 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
- 50   69254   69254 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
- 50   69254   69262 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
- 51   69254   69261 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1024M -object memory-backend-ram,size=1024M,id=mem,host-nodes=0,policy=bind -numa node,memdev=mem -drive file=/home/ubuntu/test.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
- ```
+ps -eL -o psr,pid,spid,cmd | grep qemu-system-x86_64 | grep vm-test-001  | grep -v grep | sort
+3   70099   70105 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+4   70099   70099 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+50   70099   70100 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+50   70099   70106 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+50   70099   70108 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+51   70099   70107 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,host-nodes=0,policy=bind,prealloc=on -numa node,memdev=mem -drive file=/home/ubuntu/test-01.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10022-:22 -device e1000,netdev=net0 -display none
+```
 
-Всё как и ожидалось 3, 4, 50 и 51.
+Всё как и ожидалось, используются 3, 4, 50 и 51.
 
-Проверяем, что появилась новый slice в иерархии cgroups
+На второй машине
 
 ```sh
-systemd-cgls | tee
+ps -eL -o psr,pid,spid,cmd | grep qemu-system-x86_64 | grep vm-test-002  | grep -v grep | sort
+5   70150   70161 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+6   70150   70150 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+6   70150   70151 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+52   70150   70159 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+52   70150   70162 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+53   70150   70160 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,mem-path=/dev/hugepages,share=on,host-nodes=0,policy=bind -numa node,memdev=mem -mem-prealloc -drive file=/home/ubuntu/test-02.img,if=virtio -netdev user,id=net0,ipv6=off,restrict=off,net=10.0.2.0/24,hostfwd=tcp:127.0.0.1:10023-:22 -device e1000,netdev=net0 -display none
+```
+
+Тоже все хорошо - 5, 6, 52 и 53.
+
+Проверяем, что появился новый slice в иерархии cgroups
+
+```sh
+systemd-cgls
 Control group /:
 -.slice
 ├─qemu.slice
+│ ├─vm-test-002.service
+│ │ └─70150 /usr/bin/qemu-system-x86_64 -name vm-test-002 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-file,id=mem,size=1024m,m>
 │ └─vm-test-001.service
-│   └─69254 /usr/bin/qemu-system-x86_64 -machine accel=kvm:tcg -smp cpus=4 -m 1…
+│   └─70099 /usr/bin/qemu-system-x86_64 -name vm-test-001 -machine accel=kvm:tcg -smp cpus=4 -m 1024m -object memory-backend-ram,size=1024m,id=mem,ho
 
 cat /sys/fs/cgroup/qemu.slice/vm-test-001.service/cpuset.cpus
 3-4,50-51
+cat /sys/fs/cgroup/qemu.slice/vm-test-002.service/cpuset.cpus
+5-6,52-53
 ```
+
+Посмотрим, где выделилась память для процессов
+
+```sh
+# один из тредов первой виртуалки
+cat /proc/70107/numa_maps | grep bind
+7fa3c7e00000 bind:0 anon=262144 dirty=262144 active=39847 N0=262144 kernelpagesize_kB=4
+
+# один из тредов второй виртуалки
+cat /proc/70159/numa_maps | grep bind
+7fa277e00000 bind:0 file=/dev/hugepages/qemu_back_mem.mem.WQDRfi\040(deleted) huge dirty=512 N0=512 kernelpagesize_kB=2048
+```
+
+Параметр N0, говорит, что аллоцирована память на NUMA ноде 0.
 
 А сейчас можно остановить виртуальную машину
 

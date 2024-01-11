@@ -12,6 +12,7 @@
 ## Qemu
 
 - [Объединение в одну сеть qemu через vpp](notes/qemu_vpp.md)
+- [Привязка qemu машин к конкретным CPU](notes/qemu_pin_cpus.md)
 
 ## Kubernetes
 

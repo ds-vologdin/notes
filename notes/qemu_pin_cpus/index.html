@@ -482,8 +482,9 @@ cat /proc/70159/numa_maps | grep bind
 7fa277e00000 bind:0 file=/dev/hugepages/qemu_back_mem.mem.WQDRfi\040(deleted) huge dirty=512 N0=512 kernelpagesize_kB=2048
 </code></pre>
 <p>Параметр N0, говорит, что аллоцирована память на NUMA ноде 0.</p>
-<p>А сейчас можно остановить виртуальную машину</p>
+<p>А сейчас можно остановить виртуальные машины</p>
 <pre><code class="language-sh">systemctl stop vm-test-001.service
+systemctl stop vm-test-002.service
 </code></pre></div>
             </div>
         </div>

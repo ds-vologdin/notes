@@ -391,7 +391,7 @@ qemu-img create -f qcow2 -b cirros.img -F qcow2 test-02.img 10G
 </code></pre>
 <h4 id="hugetbl_2">С использованием hugetbl</h4>
 <p>Запиним виртуальную машину в 0 NUMA ноде, на процессорах 5, 52, 6 и 53 (2 ядра и 4 треда)</p>
-<pre><code class="language-sh">sudo systemd-run --slice=qemu.slice --unit=vm-test-003 -p AllowedCPUs=5,52,6,53 \
+<pre><code class="language-sh">sudo systemd-run --slice=qemu.slice --unit=vm-test-002 -p AllowedCPUs=5,52,6,53 \
     qemu-system-x86_64 \
         -name vm-test-002 \
         -machine accel=kvm:tcg \

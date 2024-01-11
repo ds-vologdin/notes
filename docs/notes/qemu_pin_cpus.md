@@ -368,7 +368,7 @@ sudo systemd-run --slice=qemu.slice --unit=vm-test-001 -p AllowedCPUs=3,50,4,51 
 Запиним виртуальную машину в 0 NUMA ноде, на процессорах 5, 52, 6 и 53 (2 ядра и 4 треда)
 
 ```sh
-sudo systemd-run --slice=qemu.slice --unit=vm-test-003 -p AllowedCPUs=5,52,6,53 \
+sudo systemd-run --slice=qemu.slice --unit=vm-test-002 -p AllowedCPUs=5,52,6,53 \
     qemu-system-x86_64 \
         -name vm-test-002 \
         -machine accel=kvm:tcg \

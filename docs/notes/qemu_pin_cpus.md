@@ -315,7 +315,7 @@ The policy option sets the NUMA policy to one of the following values:
 - interleave - interleave memory allocations across the given host node list
 ```
 
-#### Настройка hugetbl
+#### Настройка huge pages
 
 Для того чтобы виртуальные машины могли использовать
 [hugetbl](https://www.kernel.org/doc/html/latest/admin-guide/mm/hugetlbpage.html)
@@ -344,12 +344,14 @@ qemu-img create -f qcow2 -b cirros.img -F qcow2 test-02.img 10G
 Запускать виртуалку будем, используя systemd-run, что позволит нам указать отдельный
 слайс и передать дополнительные настройки cgroup.
 
-#### Без hugetbl
+#### Без huge pages
 
 Запиним виртуальную машину в 0 NUMA ноде, на процессорах 3, 50, 4 и 51 (2 ядра и 4 треда)
 
 ```sh
-sudo systemd-run --slice=qemu.slice --unit=vm-test-001 -p AllowedCPUs=3,50,4,51 \
+sudo systemd-run --slice=qemu.slice --unit=vm-test-001 \
+    -p AllowedCPUs=3,50,4,51 \
+    -p AllowedMemoryNodes=0 \
     qemu-system-x86_64 \
         -name vm-test-001 \
         -machine accel=kvm:tcg \
@@ -363,12 +365,14 @@ sudo systemd-run --slice=qemu.slice --unit=vm-test-001 -p AllowedCPUs=3,50,4,51 
         -display none
 ```
 
-#### С использованием hugetbl
+#### С использованием huge pages
 
 Запиним виртуальную машину в 0 NUMA ноде, на процессорах 5, 52, 6 и 53 (2 ядра и 4 треда)
 
 ```sh
-sudo systemd-run --slice=qemu.slice --unit=vm-test-002 -p AllowedCPUs=5,52,6,53 \
+sudo systemd-run --slice=qemu.slice --unit=vm-test-002 \
+    -p AllowedCPUs=5,52,6,53 \
+    -p AllowedMemoryNodes=0 \
     qemu-system-x86_64 \
         -name vm-test-002 \
         -machine accel=kvm:tcg \
@@ -463,8 +467,12 @@ Control group /:
 
 cat /sys/fs/cgroup/qemu.slice/vm-test-001.service/cpuset.cpus
 3-4,50-51
+cat /sys/fs/cgroup/qemu.slice/vm-test-001.service/cpuset.mems
+0
 cat /sys/fs/cgroup/qemu.slice/vm-test-002.service/cpuset.cpus
 5-6,52-53
+cat /sys/fs/cgroup/qemu.slice/vm-test-002.service/cpuset.mems
+0
 ```
 
 Посмотрим, где выделилась память для процессов

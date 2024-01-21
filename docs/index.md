@@ -13,6 +13,7 @@
 
 - [Объединение в одну сеть qemu через vpp](notes/qemu_vpp.md)
 - [Привязка qemu машин к конкретным CPU](notes/qemu_pin_cpus.md)
+- [Подключение qemu к tap интерфейсу](notes/qemu_tap.md)
 
 ## Kubernetes
 

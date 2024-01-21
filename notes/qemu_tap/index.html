@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Использование tap интерфейсов в qemu - Vologdin Dmitry</title>
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/font-awesome.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="../..">Vologdin Dmitry</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-toggle="collapse" data-target="#navbar-collapse">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="navitem">
+                                <a href="../.." class="nav-link">Технические заметки</a>
+                            </li>
+                            <li class="navitem">
+                                <a href="../../about/" class="nav-link">Обо мне</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ml-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-toggle="modal" data-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-light navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-toggle="collapse" data-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-secondary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-level="1"><a href="#tap-qemu" class="nav-link">Использование tap интерфейсов в qemu</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-level="2"><a href="#_1" class="nav-link">Подготовка</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#vhost" class="nav-link">Работа с vhost</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-level="2"><a href="#vhost_1" class="nav-link">Работа без vhost</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="tap-qemu">Использование tap интерфейсов в qemu</h1>
+<p>Здесь будет рассмотрен базовый сценарий подключения tap сетевого интерфейса
+к виртуальной машине. Проведены замеры пропускной способности между гостевой
+и хостовой ОС.</p>
+<h2 id="_1">Подготовка</h2>
+<p>Скачаем базовый образ <a href="https://github.com/cirros-dev/cirros">cirros</a>. Он хорош в первую
+очередь своим размером.</p>
+<pre><code class="language-sh">wget http://download.cirros-cloud.net/0.6.2/cirros-0.6.2-x86_64-disk.img
+</code></pre>
+<p>Создадим снапшоты для виртуальных машин из базового образа</p>
+<pre><code class="language-sh">qemu-img create -f qcow2 -b cirros-0.6.2-x86_64-disk.img -F qcow2 vm.img 10G
+</code></pre>
+<p>Напишем скрипты для конфигурирования <code>tap</code> устройства при его создании и удалении,
+которые будет использовать qemu</p>
+<p>Скрипт <code>up_tap.sh</code> просто добавляет сетевой интерфейс и вешает на него адрес</p>
+<pre><code class="language-bash">#!/bin/bash
+
+IF=$1
+ip tuntap add $IF mode tap
+ip add add 192.168.15.254/24 dev $IF
+ip link set up $IF
+</code></pre>
+<p>и скрипт удаления tap интерфейса <code>down_tap.sh</code></p>
+<pre><code class="language-bash">#!/bin/bash
+
+IF=$1
+echo &quot;down interface $IF&quot;
+ip tuntap del $IF mod tap
+</code></pre>
+<p>На гостевой операционной системе мы сконфигурируем сетевые интерфейсы вручную.</p>
+<h2 id="vhost">Работа с vhost</h2>
+<p>Vhost позволяет передавать сетевые пакеты напрямую из гостевой в хостовую ОС,
+минуя qemu.</p>
+<h3 id="_2">Запуск виртуальной машин</h3>
+<pre><code class="language-sh">qemu-system-x86_64 \
+    -machine accel=kvm:tcg \
+    -smp cpus=2 \
+    -m 512m \
+    -drive file=vm.img,if=virtio \
+    -netdev tap,ifname=tap-1,vhost=on,id=net1,script=./up_tap.sh,downscript=./down_tap.sh \
+    -device virtio-net-pci,netdev=net1
+</code></pre>
+<p>Виртуальная машина запустится и в неё можно залогиниться с учетной <code>cirros</code> и паролем <code>gocubsgo</code>.</p>
+<blockquote>
+<p>После первого запуска можно в файле /etc/cirros-init/config можно закомментировать
+строку с настройкой <code>DATASOURCE_LIST</code>. Что ускорит последующие запуски, поскольку cloud-init
+не будет пытаться подключиться к IMDService.</p>
+</blockquote>
+<h3 id="_3">Тест пропускной способности</h3>
+<p>Запускаем на хосте iperf3</p>
+<pre><code class="language-sh">iperf3 -s
+</code></pre>
+<p>В консоли виртуальной машины настраиваем сеть</p>
+<pre><code class="language-sh">ip a a 192.168.15.2 dev eth0
+</code></pre>
+<p>Проверяем, что доступен </p>
+<pre><code class="language-sh">iperf3 -c 192.168.15.254
+</code></pre>
+<p>И на сервере получаем отчет.</p>
+<pre><code class="language-sh">Accepted connection from 192.168.15.2, port 52688
+[  5] local 192.168.15.254 port 5201 connected to 192.168.15.2 port 52700
+[ ID] Interval           Transfer     Bitrate
+[  5]   0.00-1.00   sec  6.92 GBytes  59.5 Gbits/sec                  
+[  5]   1.00-2.00   sec  6.94 GBytes  59.6 Gbits/sec                  
+[  5]   2.00-3.00   sec  7.08 GBytes  60.8 Gbits/sec                  
+[  5]   3.00-4.00   sec  7.06 GBytes  60.7 Gbits/sec                  
+[  5]   4.00-5.00   sec  6.88 GBytes  59.1 Gbits/sec                  
+[  5]   5.00-6.00   sec  6.89 GBytes  59.2 Gbits/sec                  
+[  5]   6.00-7.00   sec  7.08 GBytes  60.8 Gbits/sec                  
+[  5]   7.00-8.00   sec  7.08 GBytes  60.8 Gbits/sec                  
+[  5]   8.00-9.00   sec  6.95 GBytes  59.7 Gbits/sec                  
+[  5]   9.00-10.00  sec  7.05 GBytes  60.5 Gbits/sec                  
+[  5]  10.00-10.04  sec   295 MBytes  59.3 Gbits/sec                  
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate
+[  5]   0.00-10.04  sec  70.2 GBytes  60.1 Gbits/sec                  receiver
+</code></pre>
+<h2 id="vhost_1">Работа без vhost</h2>
+<p>А сейчас попробуем отключить vhost и посмотрим на сколько сильно это повлияет на
+пропускную способность.</p>
+<h3 id="_4">Запуск виртуальной машин</h3>
+<p>Выключаем виртуальную машину и запускаем снова с отключенной опцией <code>vhost</code>.</p>
+<pre><code class="language-sh">qemu-system-x86_64 \
+    -machine accel=kvm:tcg \
+    -smp cpus=2 \
+    -m 512m \
+    -drive file=vm.img,if=virtio \
+    -netdev tap,ifname=tap-1,vhost=off,id=net1,script=./up_tap.sh,downscript=./down_tap.sh \
+    -device virtio-net-pci,netdev=net1
+</code></pre>
+<p>После запуска конфигурируем аналогично тому как делали это раньше</p>
+<pre><code class="language-sh">ip a a 192.168.15.2 dev eth0
+</code></pre>
+<h3 id="vhost_2">Тест пропускной способности без vhost</h3>
+<p>Повторяем замер скорости и видим, что без vhost как и ожидалось пропускная способность
+заметно ниже. Схема с отключенным vhost в моем тесте показала снижение пропускной
+способности на 24%.</p>
+<pre><code class="language-sh">Accepted connection from 192.168.15.2, port 52336
+[  5] local 192.168.15.254 port 5201 connected to 192.168.15.2 port 52340
+[ ID] Interval           Transfer     Bitrate
+[  5]   0.00-1.00   sec  4.82 GBytes  41.4 Gbits/sec                  
+[  5]   1.00-2.00   sec  5.18 GBytes  44.5 Gbits/sec                  
+[  5]   2.00-3.00   sec  5.45 GBytes  46.8 Gbits/sec                  
+[  5]   3.00-4.00   sec  5.33 GBytes  45.8 Gbits/sec                  
+[  5]   4.00-5.00   sec  5.17 GBytes  44.4 Gbits/sec                  
+[  5]   5.00-6.00   sec  5.41 GBytes  46.4 Gbits/sec                  
+[  5]   6.00-7.00   sec  5.44 GBytes  46.7 Gbits/sec                  
+[  5]   7.00-8.00   sec  5.40 GBytes  46.4 Gbits/sec                  
+[  5]   8.00-9.00   sec  5.41 GBytes  46.5 Gbits/sec                  
+[  5]   9.00-10.00  sec  5.37 GBytes  46.1 Gbits/sec                  
+[  5]  10.00-10.04  sec   207 MBytes  45.3 Gbits/sec                  
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate
+[  5]   0.00-10.04  sec  53.2 GBytes  45.5 Gbits/sec                  receiver
+</code></pre></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../../js/jquery-3.6.0.min.js"></script>
+        <script src="../../js/bootstrap.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

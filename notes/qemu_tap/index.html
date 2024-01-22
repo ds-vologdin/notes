@@ -76,6 +76,10 @@
               <ul class="nav flex-column">
               </ul>
             </li>
+            <li class="nav-item" data-level="2"><a href="#_4" class="nav-link">Дополнительные ссылки</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -132,13 +136,14 @@ ip tuntap del $IF mod tap
 не будет пытаться подключиться к IMDService.</p>
 </blockquote>
 <h3 id="_3">Тест пропускной способности</h3>
-<p>Запускаем на хосте iperf3</p>
+<p>Запускаем на хосте <code>iperf3</code></p>
 <pre><code class="language-sh">iperf3 -s
 </code></pre>
 <p>В консоли виртуальной машины настраиваем сеть</p>
 <pre><code class="language-sh">ip a a 192.168.15.2 dev eth0
 </code></pre>
-<p>Проверяем, что доступен </p>
+<p>Сейчас с гостевой ОС доступна хостовая система по адресу <code>192.168.15.254</code>.
+Запускаем тест</p>
 <pre><code class="language-sh">iperf3 -c 192.168.15.254
 </code></pre>
 <p>И на сервере получаем отчет.</p>
@@ -163,7 +168,7 @@ ip tuntap del $IF mod tap
 <h2 id="vhost_1">Работа без vhost</h2>
 <p>А сейчас попробуем отключить vhost и посмотрим на сколько сильно это повлияет на
 пропускную способность.</p>
-<h3 id="_4">Запуск виртуальной машин</h3>
+<h3 id="vhost_2">Запуск виртуальной машины без vhost</h3>
 <p>Выключаем виртуальную машину и запускаем снова с отключенной опцией <code>vhost</code>.</p>
 <pre><code class="language-sh">qemu-system-x86_64 \
     -machine accel=kvm:tcg \
@@ -176,8 +181,8 @@ ip tuntap del $IF mod tap
 <p>После запуска конфигурируем аналогично тому как делали это раньше</p>
 <pre><code class="language-sh">ip a a 192.168.15.2 dev eth0
 </code></pre>
-<h3 id="vhost_2">Тест пропускной способности без vhost</h3>
-<p>Повторяем замер скорости и видим, что без vhost как и ожидалось пропускная способность
+<h3 id="vhost_3">Тест пропускной способности без vhost</h3>
+<p>Повторяем замер скорости и видим, что без <code>vhost</code>, как и ожидалось, пропускная способность
 заметно ниже. Схема с отключенным vhost в моем тесте показала снижение пропускной
 способности на 24%.</p>
 <pre><code class="language-sh">Accepted connection from 192.168.15.2, port 52336
@@ -197,7 +202,14 @@ ip tuntap del $IF mod tap
 - - - - - - - - - - - - - - - - - - - - - - - - -
 [ ID] Interval           Transfer     Bitrate
 [  5]   0.00-10.04  sec  53.2 GBytes  45.5 Gbits/sec                  receiver
-</code></pre></div>
+</code></pre>
+<h2 id="_4">Дополнительные ссылки</h2>
+<ul>
+<li><a href="https://www.redhat.com/en/blog/introduction-virtio-networking-and-vhost-net">Introduction to virtio-networking and vhost-net</a></li>
+<li><a href="https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net">Deep dive into Virtio-networking and vhost-net</a></li>
+<li><a href="https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone">Virtio devices and drivers overview: The headjack and the phone</a></li>
+<li><a href="https://www.redhat.com/en/blog/virtqueues-and-virtio-ring-how-data-travels">Virtqueues and virtio ring: How the data travels</a></li>
+</ul></div>
             </div>
         </div>
 

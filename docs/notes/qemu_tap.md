@@ -70,7 +70,7 @@ qemu-system-x86_64 \
 
 ### Тест пропускной способности
 
-Запускаем на хосте iperf3
+Запускаем на хосте `iperf3`
 
 ```sh
 iperf3 -s
@@ -82,13 +82,15 @@ iperf3 -s
 ip a a 192.168.15.2 dev eth0
 ```
 
-Проверяем, что доступен 
+Сейчас с гостевой ОС доступна хостовая система по адресу `192.168.15.254`.
+Запускаем тест
 
 ```sh
 iperf3 -c 192.168.15.254
 ```
 
 И на сервере получаем отчет.
+
 ```sh
 Accepted connection from 192.168.15.2, port 52688
 [  5] local 192.168.15.254 port 5201 connected to 192.168.15.2 port 52700
@@ -114,7 +116,7 @@ Accepted connection from 192.168.15.2, port 52688
 А сейчас попробуем отключить vhost и посмотрим на сколько сильно это повлияет на
 пропускную способность.
 
-### Запуск виртуальной машин
+### Запуск виртуальной машины без vhost
 
 Выключаем виртуальную машину и запускаем снова с отключенной опцией `vhost`.
 
@@ -136,7 +138,7 @@ ip a a 192.168.15.2 dev eth0
 
 ### Тест пропускной способности без vhost
 
-Повторяем замер скорости и видим, что без vhost как и ожидалось пропускная способность
+Повторяем замер скорости и видим, что без `vhost`, как и ожидалось, пропускная способность
 заметно ниже. Схема с отключенным vhost в моем тесте показала снижение пропускной
 способности на 24%.
 
@@ -160,3 +162,9 @@ Accepted connection from 192.168.15.2, port 52336
 [  5]   0.00-10.04  sec  53.2 GBytes  45.5 Gbits/sec                  receiver
 ```
 
+## Дополнительные ссылки
+
+- [Introduction to virtio-networking and vhost-net](https://www.redhat.com/en/blog/introduction-virtio-networking-and-vhost-net)
+- [Deep dive into Virtio-networking and vhost-net](https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net)
+- [Virtio devices and drivers overview: The headjack and the phone](https://www.redhat.com/en/blog/virtio-devices-and-drivers-overview-headjack-and-phone)
+- [Virtqueues and virtio ring: How the data travels](https://www.redhat.com/en/blog/virtqueues-and-virtio-ring-how-data-travels)
